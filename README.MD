@@ -47,6 +47,40 @@ The shottimer is displayed with a delay of two seconds, which is on purpose. Whe
 ### Deactivating waterlevel function or timer function
 If you do not need the waterlevel but want the timer function, the system can be used without plugging in any levelsensor. The default wakescreen will be an orange ring with a questionmark, indicating a missing sensor. If you don't want the shottimer function, you can deactivate it by setting **ENABLE_TIMER** to false.
 
+### Adjusting the robot eyes
+The animated robot eyes are shown on the wakescreen when the waterlevel sensor is disabled. Their colors can be changed in [include/config.h](include/config.h): **FACE_EYE_COLOR** sets the main color of the eyes, **FACE_EYE_TOP_COLOR** the bright top edge and **FACE_EYE_BOTTOM_COLOR** the dark bottom edge. All are RGB565 values (the same format as the other color settings in that file).
+
+The eye edges are anti-aliased so the rounded shape has no staircase artefacts. The quality is set by **AA_SUBSAMPLES** in [include/greetingdisplay.h](include/greetingdisplay.h) (3 means a 3x3 sub-pixel grid per pixel, i.e. ten brightness levels along the edge). Lower values are faster but produce harder edges.
+
+### Shot timer rendering
+While a shot is running, the ring grows continuously with the elapsed time and is redrawn every **FRAME_TIME_MS** milliseconds (16 ms, about 60 FPS), the counter switches every full second. Ring, digits and status symbols are anti-aliased like the robot eyes: the ring's edge coverage is computed per pixel, the digits use pre-rendered 8 bit alpha fonts in [lib/Font](lib/Font). Only the area around the moving end of the ring is redrawn each frame.
+
+### Shot timer ring
+During a shot the ring shows more than the elapsed time:
+- **Target window:** the ring covers 0 to **TIMER_RING_MAX_SEC** seconds. The window from **TARGET_WINDOW_START_SEC** to **TARGET_WINDOW_END_SEC** is highlighted on the track.
+- **Track:** a gray track as wide as the ring (**RING_TRACK_WIDTH**, **RING_TRACK_COLOR**, **RING_TRACK_ALPHA**) shows how far the shot can go, the target window is pale dark green on it (**RING_TRACK_WINDOW_COLOR**).
+- **Color gradient:** the fill changes its color along the ring, from the eye color (**RING_COLOR_TIMER_START**) over blue (**RING_COLOR_TIMER**) to green inside the window (**RING_COLOR_TIMER_COMPLETE**) and yellow, orange and red after it (**RING_COLOR_TIMER_WARN**, **RING_COLOR_TIMER_OVER**, **RING_COLOR_TIMER_LATE**).
+- **Glowing head:** the end of the fill carries a bright dot with a soft glow.
+
+### Transitions between robot eyes and shot timer
+When a shot starts, the robot eyes squeeze into two glowing lines that slide together and merge into a dot in the center (**TRANSITION_EYES_MERGE_MS**). Meanwhile the gray track runs around the ring at an even speed (**TRANSITION_RING_BUILD_MS**), then the colored fill grows to the current shot time (**TRANSITION_RING_FILL_MS**), and the dot the eyes merged into becomes a pen: it moves to the start of the first number and writes it stroke by stroke, then fades out (**TRANSITION_DIGIT_DRAW_MS**, **PEN_DOT_RADIUS**). The stroke order and the pen path of every digit are computed by the font converter. The "s" fades in (**TRANSITION_TEXT_FADE_MS**). When the shot ends, the final time stays on screen for **TIMER_RESULT_HOLD_MS**, then the counter fades out, the colored fill retracts (**TRANSITION_RING_FILL_MS**), the gray track runs back to the start (**TRANSITION_RING_BUILD_MS**) and halfway through the eyes pop open again (**TRANSITION_EYES_OPEN_MS**). The eyes also open this way on wake-up and slowly close before the display goes to sleep (**TRANSITION_EYES_CLOSE_MS**). All values are in [include/config.h](include/config.h).
+
+![](doc/images/transition-eyes-timer.gif)
+
+The anti-aliased fonts are generated from the Roboto Light TTF with [tools/fontconvert_aa.py](tools/fontconvert_aa.py) (needs Python with Pillow); the exact commands are listed at the top of the script.
+
+### Frame rate and benchmark
+All animations are drawn at about 60 FPS. The RP2040 has no floating point unit, so the drawing code avoids per-pixel floating point math: the angle and radius of every ring pixel are precomputed once at boot (about 80 KB RAM), colors are blended with shifts, and only the pixels that change are sent to the display.
+
+To check the frame times on the device, flash the benchmark build. It fakes a 14 s shot every 30 s and prints the frame times over USB serial (lines starting with `PERF` and `GAP`):
+
+```
+pio run -e bench -t upload
+pio device monitor
+```
+
+Flash the normal firmware again afterwards (`pio run -e pico -t upload`).
+
 ## Bill of materials (BoM)
 
 The following items are necessary to build the waterlevel indicator. Items marked with a (*) at the beginning do not need to be the exact listed item but may be replaced with something else. Sourcing links are included for people based in germany (those are the shops where I got the items from).

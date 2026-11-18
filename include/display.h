@@ -120,6 +120,13 @@ namespace Display {
      * Updates a single pixel at position (x, y) with the given color
      */
     void setPixel(uint16_t x, uint16_t y, uint16_t color);
+
+    /**
+     * Writes a horizontal row of pixels (xStart..xEnd at row y) in one single
+     * SPI transfer. This is dramatically faster than calling setPixel() for
+     * every pixel, because the address window only has to be set once per row.
+     */
+    void drawRow(uint16_t xStart, uint16_t y, uint16_t xEnd, const uint16_t* colors);
 }
 
 /**

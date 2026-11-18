@@ -21,6 +21,8 @@ private:
     bool _hidden;
     // Current state of status indicator
     StatusIndicatorState _state;
+    // Current color of status indicator
+    uint16_t _color;
     // Center coordinates of status indicator
     uint8_t _xCenter, _yCenter;
 

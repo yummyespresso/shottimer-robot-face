@@ -2,92 +2,61 @@
 #define _graphics_h
 
 #include <pico/stdlib.h>
-#include <gfxfont.h>
-
-//Angular drawing resolution
-#define ARC_ANGULAR_RES 0.005
-//Distance drawing resolution (< 1/sqrt(2))
-#define ARC_DISTANCE_RES 0.7
+#include <aafont.h>
 
 /**
- * 
- * Graphics namespace includes drawing utilities to draw circles, arcs and characters
- * by drawing individual pixels
- * 
+ *
+ * Graphics namespace includes anti-aliased drawing utilities.
+ * All drawing assumes a black background: partially covered pixels are
+ * blended between the given color and black.
+ *
  */
 namespace Graphics {
     /**
-     * Draws an arc centered around (xCenter, yCenter) with given radius, thickness and color.
-     * The arc is drawn from radStart to radEnd, both given in radiants.
-     * 0 radiant is located at the bottom of the circle (respecting display rotation!).
+     * Blends color with the black background. alpha = 0 gives black,
+     * alpha = 255 gives the unchanged color.
      */
-    void drawArc(uint8_t xCenter, uint8_t yCenter, uint8_t radius,
-                float radStart, float radEnd, uint8_t width, uint16_t color);
+    uint16_t blend(uint16_t color, uint8_t alpha);
 
     /**
-     * Draws a full circle centered around (xCenter, yCenter) with given radius and color.
+     * Mixes two colors: alpha = 0 gives a, alpha = 255 gives b.
      */
-    void drawFullCircle(uint8_t xCenter, uint8_t yCenter, 
-                    uint8_t radius, uint16_t color);
+    uint16_t mix(uint16_t a, uint16_t b, uint8_t alpha);
 
     /**
-     * Draws an arc centered around (xCenter, yCenter) with given radius, thickness and color.
-     * The arc is drawn from radStart to radEnd, both given in radiants.
-     * 0 radiant is located at the bottom of the circle (respecting display rotation!).
-     * The start and end of the arc are "rounded" by drawing two additional circles respectively,
-     * whose diameter matches the arc width.
+     * Fills the rectangle [x0, x1] x [y0, y1] (inclusive) with the given color.
+     * Coordinates outside the display are clipped.
      */
-    void drawRoundedArc(uint8_t xCenter, uint8_t yCenter, uint8_t radius,
-                    float radStart, float radEnd, uint8_t width, uint16_t color);
+    void fillRect(int x0, int y0, int x1, int y1, uint16_t color);
 
     /**
-     * Draws the given character c with lower left corner (x, y) in the given color.
-     * The font, glyph and bitmap specify the pixel table of the character.
+     * Returns the glyph of character c or nullptr if the font does not contain it.
      */
-    void drawChar(uint8_t x, uint8_t y, unsigned char c, uint16_t color, 
-                const GFXfont *font, const GFXglyph *glyph, const uint8_t *bitmap);
+    const AAGlyph* getGlyph(const AAFont& font, char c);
 
     /**
-     * Draws a character based on its glyphIndex with lower left corner (x, y) in the given color.
-     * The font, glyph and bitmap specify the pixel table of the character.
+     * Returns the alpha value of the glyph at (gx, gy), relative to the top left
+     * corner of the glyph's inked area. Returns 0 outside of the glyph.
      */
-    void drawCharByIndex(uint8_t x, uint8_t y, uint8_t glyphIndex, uint16_t color, 
-                const GFXglyph *glyph, const uint8_t *bitmap);
+    uint8_t glyphAlpha(const AAFont& font, const AAGlyph* glyph, int gx, int gy);
+
+    /**
+     * Returns the draw order of the glyph at (gx, gy) (0 = pen starts here,
+     * 255 = pen ends here). Returns 0 if the font has no draw order.
+     */
+    uint8_t glyphOrder(const AAFont& font, const AAGlyph* glyph, int gx, int gy);
+
+    /**
+     * Draws the anti-aliased character c with the top left corner of its inked
+     * area at (inkLeft, inkTop). Every pixel of the inked rectangle is written,
+     * so drawing in BLACK removes the character again.
+     */
+    void drawGlyph(const AAFont& font, char c, int inkLeft, int inkTop, uint16_t color);
+
+    /**
+     * Shared row buffer for drawing code that writes whole rows via Display::drawRow.
+     */
+    extern uint16_t rowBuffer[];
 }
-
-
-/**
- * 
- * The following functions contain source-code from the AdafruitGFX library, 
- * whose license is included at the bottom of this file.
- *      - Graphics::drawChar
- *      - Graphics::drawCharByIndex
- * 
- Software License Agreement (BSD License)
-
-Copyright (c) 2012 Adafruit Industries.  All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-- Redistributions of source code must retain the above copyright notice,
-  this list of conditions and the following disclaimer.
-- Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
- * 
- */
 
 #endif

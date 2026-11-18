@@ -407,6 +407,40 @@ namespace Display {
         sendData16Bit(color);
     };
 
+    void drawRow(uint16_t xStart, uint16_t y, uint16_t xEnd, const uint16_t* colors) {
+        if(xEnd < xStart) return;
+        uint16_t count = xEnd - xStart + 1;
+        static uint8_t buffer[LCD_WIDTH * 2];
+        bool reverse = false;
+
+        // A screen row maps to a row or a column on the panel, depending on the
+        // rotation. For 90/180 degrees the x direction is flipped.
+        switch(ROTATION) {
+            case 90:
+                setWindow(y, LCD_HEIGHT - xEnd, y, LCD_HEIGHT - xStart);
+                reverse = true;
+                break;
+            case 180:
+                setWindow(LCD_WIDTH - xEnd, LCD_HEIGHT - y, LCD_WIDTH - xStart, LCD_HEIGHT - y);
+                reverse = true;
+                break;
+            case 270:
+                setWindow(LCD_WIDTH - y, xStart, LCD_WIDTH - y, xEnd);
+                break;
+            default:
+                setWindow(xStart, y, xEnd, y);
+                break;
+        }
+
+        for(uint16_t i = 0; i < count; i++) {
+            uint16_t color = colors[reverse ? (count - 1 - i) : i];
+            buffer[2 * i] = (uint8_t)(color >> 8);
+            buffer[2 * i + 1] = (uint8_t)(color & 0xFF);
+        }
+        gpio_put(LCD_DC_PIN, 1);
+        spi_write_blocking(LCD_SPI_PORT, buffer, count * 2);
+    }
+
     void setBrightness(uint8_t brightness) {
         // Clip brightness if necessary
         if(brightness > 100) {

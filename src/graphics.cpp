@@ -1,127 +1,84 @@
-#include <stdlib.h>
 #include <graphics.h>
-#include <math.h>
-#include <Arduino.h>
-#include <serialutils.h>
 #include <display.h>
-#include <Roboto_Light50pt7b.h>
 
 namespace Graphics {
 
-    void drawArc(uint8_t xCenter, uint8_t yCenter, uint8_t radius,
-                float radStart, float radEnd, uint8_t width, uint16_t color) {
+    uint16_t rowBuffer[LCD_WIDTH];
 
-        // Sanity checks
-        if(radStart >= radEnd) {
-            sout.err() <= "drawArc called with radStart < radEnd";
-            return;
-        };
+    // Both functions use shifts instead of divisions: alpha (0..255) is
+    // mapped to 0..256 so that 255 keeps the color unchanged.
+    uint16_t blend(uint16_t color, uint8_t alpha) {
+        if(alpha == 255) return color;
+        if(alpha == 0) return BLACK;
+        uint32_t s = alpha + (alpha >> 7);
+        uint32_t r = (((color >> 11) & 0x1F) * s + 128) >> 8;
+        uint32_t g = (((color >> 5) & 0x3F) * s + 128) >> 8;
+        uint32_t b = ((color & 0x1F) * s + 128) >> 8;
+        return (uint16_t)((r << 11) | (g << 5) | b);
+    }
 
-        if(radius < 0) {
-            sout.err() <= "drawArc called with radius < 0";
-            return;
+    uint16_t mix(uint16_t a, uint16_t b, uint8_t alpha) {
+        if(alpha == 0) return a;
+        if(alpha == 255) return b;
+        if(a == b) return a;
+        uint32_t s = alpha + (alpha >> 7);
+        uint32_t inv = 256 - s;
+        uint32_t r = (((a >> 11) & 0x1F) * inv + ((b >> 11) & 0x1F) * s + 128) >> 8;
+        uint32_t g = (((a >> 5) & 0x3F) * inv + ((b >> 5) & 0x3F) * s + 128) >> 8;
+        uint32_t bl = ((a & 0x1F) * inv + (b & 0x1F) * s + 128) >> 8;
+        return (uint16_t)((r << 11) | (g << 5) | bl);
+    }
+
+    void fillRect(int x0, int y0, int x1, int y1, uint16_t color) {
+        if(x0 < 0) x0 = 0;
+        if(y0 < 0) y0 = 0;
+        if(x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
+        if(y1 >= LCD_HEIGHT) y1 = LCD_HEIGHT - 1;
+        if(x0 > x1 || y0 > y1) return;
+
+        for(int x = x0; x <= x1; x++) rowBuffer[x - x0] = color;
+        for(int y = y0; y <= y1; y++) {
+            Display::drawRow(x0, y, x1, rowBuffer);
         }
+    }
 
-        if(width < 1) {
-            sout.err() <= "drawArc called with width < 1";
-            return;
-        }
+    const AAGlyph* getGlyph(const AAFont& font, char c) {
+        uint8_t code = (uint8_t)c;
+        if(code < font.first || code > font.last) return nullptr;
+        const AAGlyph* glyph = &font.glyphs[code - font.first];
+        if(glyph->width == 0) return nullptr;
+        return glyph;
+    }
 
-        // Keep track of previously painted pixel to skip some double paintings
-        int prevX, prevY = -1;
+    uint8_t glyphAlpha(const AAFont& font, const AAGlyph* glyph, int gx, int gy) {
+        if(glyph == nullptr) return 0;
+        if(gx < 0 || gy < 0 || gx >= glyph->width || gy >= glyph->height) return 0;
+        return font.bitmap[glyph->bitmapOffset + gy * glyph->width + gx];
+    }
 
-        float radiusCur = max(((float)radius) - (((float)width)/2), 1);
-        float radiusEnd = ((float)radius) + (((float)width)/2);
+    uint8_t glyphOrder(const AAFont& font, const AAGlyph* glyph, int gx, int gy) {
+        if(font.order == nullptr || glyph == nullptr) return 0;
+        if(gx < 0 || gy < 0 || gx >= glyph->width || gy >= glyph->height) return 0;
+        return font.order[glyph->bitmapOffset + gy * glyph->width + gx];
+    }
 
-        while(radiusCur < radiusEnd) {
+    void drawGlyph(const AAFont& font, char c, int inkLeft, int inkTop, uint16_t color) {
+        const AAGlyph* glyph = getGlyph(font, c);
+        if(glyph == nullptr) return;
 
-            // Calculate angular resolution based on worst-case angular distance
-            float angularRes = asinf(1/((float) radiusCur)) * ARC_DISTANCE_RES;
+        int x0 = inkLeft < 0 ? 0 : inkLeft;
+        int x1 = inkLeft + glyph->width - 1;
+        if(x1 >= LCD_WIDTH) x1 = LCD_WIDTH - 1;
+        if(x0 > x1) return;
 
-            // Reset current radiants
-            float radCur = radStart;
-            
-            while(radCur < radEnd) {
-
-                int x = xCenter + sinf(radCur)*radiusCur;
-                int y = yCenter + cosf(radCur)*radiusCur;
-
-                // Only draw pixel if it
-                // 1. is inside display boundaries
-                // 2. hasn't been painted in previous loop
-                if(x > 0 && y > 0 && x < LCD_HEIGHT && y < LCD_WIDTH && !(prevX == x && prevY == y)) {
-                    Display::setPixel(x, y, color);
-                }
-
-                prevX = x;
-                prevY = y;
-
-                radCur += angularRes;
+        for(int gy = 0; gy < glyph->height; gy++) {
+            int y = inkTop + gy;
+            if(y < 0 || y >= LCD_HEIGHT) continue;
+            const uint8_t* row = &font.bitmap[glyph->bitmapOffset + gy * glyph->width];
+            for(int x = x0; x <= x1; x++) {
+                rowBuffer[x - x0] = blend(color, row[x - inkLeft]);
             }
-
-            radiusCur += ARC_DISTANCE_RES;
-
-        }
-
-    }
-
-    void drawFullCircle(uint8_t xCenter, uint8_t yCenter, uint8_t radius, uint16_t color) {
-        // Draw a full circle by drawing a full arc with enough width.
-        float radStart = 0;
-        float radEnd = 2*PI;
-        drawArc(xCenter, yCenter, 0, radStart, radEnd, 2*radius, color);
-
-    }
-
-    void drawRoundedArc(uint8_t xCenter, uint8_t yCenter, uint8_t radius,
-                    float radStart, float radEnd, uint8_t width, uint16_t color) {
-
-        // Position of circle at start
-        int x_start = xCenter + sinf(radStart)*radius;
-        int y_start = yCenter + cosf(radStart)*radius;
-
-        // Position of circle at end
-        int x_end = xCenter + sinf(radEnd)*radius;
-        int y_end = yCenter + cosf(radEnd)*radius;
-        
-        // Draw circle at arc start for rounded corners
-        drawFullCircle(x_start, y_start, width/2, color);
-        // Draw actual arc
-        drawArc(xCenter, yCenter, radius, radStart, radEnd, width, color);
-        // Draw circle at arc end for rounded corners
-        drawFullCircle(x_end, y_end, width/2, color);
-    }
-
-    void drawChar(uint8_t x, uint8_t y, unsigned char c, uint16_t color, 
-                const GFXfont *font, const GFXglyph *glyph, const uint8_t *bitmap) {
-        // Determine character glyph index and call drawbyindex function
-        c -= (uint8_t)(font->first);
-        drawCharByIndex(x, y, c, color, glyph, bitmap);
-    }
-
-    void drawCharByIndex(uint8_t x, uint8_t y, uint8_t glyphIndex, uint16_t color, 
-                const GFXglyph *glyph, const uint8_t *bitmap) {
-
-        // Get drawing parameters for glyph
-        uint16_t bo = glyph[glyphIndex].bitmapOffset;
-        uint8_t w = glyph[glyphIndex].width;
-        uint8_t h = glyph[glyphIndex].height;
-        int8_t xo = glyph[glyphIndex].xOffset;
-        int8_t yo = glyph[glyphIndex].yOffset;
-        uint8_t xx, yy, bits = 0, bit = 0;
-        int16_t xo16 = 0, yo16 = 0;
-
-        // Iterate through columns and rows of glyph table to draw character
-        for (yy = 0; yy < h; yy++) {
-            for (xx = 0; xx < w; xx++) {
-                if (!(bit++ & 7)) {
-                    bits = bitmap[bo++];
-                }
-                if (bits & 0x80) {
-                    Display::setPixel(x + xo + xx, y + yo + yy, color);
-                }
-                bits <<= 1;
-            }
+            Display::drawRow(x0, y, x1, rowBuffer);
         }
     }
 
